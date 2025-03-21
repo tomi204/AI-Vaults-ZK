@@ -1,66 +1,131 @@
-## Foundry
+# Reward Vault System
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+A vault system built with Foundry and compatible with zkSync Era that allows users to deposit assets and earn rewards. The system implements ERC4626 standard for tokenized vaults.
 
-Foundry consists of:
+## Features
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- ERC4626-compliant vault for seamless integration with other DeFi protocols
+- Rewards distribution system for depositors
+- Multiple strategies for yield generation
+- Admin and agent roles for secure management
+- zkSync Era compatibility
 
-## Documentation
+## Contracts
 
-https://book.getfoundry.sh/
+### Core Contracts
+
+- **RewardVault**: The main vault contract that implements ERC4626 standard with rewards.
+- **RewardsDistributor**: Manages the distribution of rewards to vault depositors.
+
+### Strategies
+
+- **BalancerStrategy**: Strategy for interacting with Balancer V2 pools.
+
+### Interfaces
+
+- **ILending**: Generic interface for interacting with lending protocols.
+- **IAaveV3Pool**: Interface for interaction with Aave V3 lending pools.
+- **IBalancerV2**: Interface for interaction with Balancer V2 vault.
+- **IRewardsDistributor**: Interface for rewards distribution.
+
+## Getting Started
+
+### Prerequisites
+
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [zkSync Era toolkit](https://docs.zksync.io/api/tools/zksync-cli/)
+
+### Installation
+
+1. Clone the repository:
+
+```bash
+git clone <repository-url>
+cd hello_foundry
+```
+
+2. Install dependencies:
+
+```bash
+forge install
+```
+
+3. Build the project:
+
+```bash
+forge build
+```
+
+### Testing
+
+Run the tests with:
+
+```bash
+forge test
+```
+
+### Deployment
+
+1. Set up environment variables:
+
+```bash
+export PRIVATE_KEY=your_private_key
+```
+
+2. Deploy to zkSync Era testnet:
+
+```bash
+forge script script/RewardVault.s.sol:RewardVaultScript --broadcast --rpc-url https://testnet.era.zksync.dev
+```
 
 ## Usage
 
-### Build
+### Depositing into the Vault
 
-```shell
-$ forge build
+Users can deposit assets into the vault and start earning rewards:
+
+```solidity
+// Approve the vault to spend tokens
+IERC20(assetAddress).approve(vaultAddress, amount);
+
+// Deposit into the vault
+RewardVault(vaultAddress).deposit(amount);
 ```
 
-### Test
+### Withdrawing from the Vault
 
-```shell
-$ forge test
+Users can withdraw their assets from the vault:
+
+```solidity
+// Withdraw assets
+RewardVault(vaultAddress).withdraw(sharesAmount);
 ```
 
-### Format
+### Claiming Rewards
 
-```shell
-$ forge fmt
+Users can claim their accrued rewards:
+
+```solidity
+// Claim rewards
+RewardVault(vaultAddress).claimRewards();
 ```
 
-### Gas Snapshots
+## Architecture
 
-```shell
-$ forge snapshot
-```
+The vault system follows a modular architecture:
 
-### Anvil
+1. **Vault**: The core contract that manages user deposits and shares.
+2. **Rewards**: A separate system that tracks and distributes rewards based on user deposits.
+3. **Strategies**: Pluggable contracts that implement different yield generation strategies.
+4. **Pools**: Integration with external lending pools.
 
-```shell
-$ anvil
-```
+## Security Considerations
 
-### Deploy
+- The contracts use OpenZeppelin's libraries for standard functionality.
+- Access control is implemented using OpenZeppelin's AccessControl.
+- Reentrancy protection is added to all external functions that handle assets.
+- SafeERC20 is used for safe token transfers.
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
+## License
 
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+This project is licensed under the MIT License.
