@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.0;
 
 /**
  * @title IRewardsDistributor
@@ -7,13 +7,7 @@ pragma solidity ^0.8.13;
  */
 interface IRewardsDistributor {
     /**
-     * @dev Adds rewards to the distribution pool
-     * @param amount The amount of rewards to add
-     */
-    function addRewards(uint256 amount) external;
-
-    /**
-     * @dev Updates user's reward accrual when their balance changes
+     * @dev Updates the rewards for a user
      * @param user The address of the user
      * @param oldBalance The old balance of the user
      * @param newBalance The new balance of the user
@@ -25,22 +19,28 @@ interface IRewardsDistributor {
     ) external;
 
     /**
-     * @dev Distributes rewards to a user
-     * @param user The address of the user to distribute rewards to
-     * @return The amount of rewards distributed
+     * @dev Distributes rewards to users
+     * @param amount The amount of rewards to distribute
      */
-    function distributeRewards(address user) external returns (uint256);
+    function distributeRewards(uint256 amount) external;
 
     /**
-     * @dev Returns the amount of rewards accrued by a user
+     * @dev Gets the accrued rewards for a user
      * @param user The address of the user
-     * @return The amount of rewards accrued
+     * @return The amount of accrued rewards
      */
     function getAccruedRewards(address user) external view returns (uint256);
 
     /**
-     * @dev Sets the rewards rate (rewards per token per second)
-     * @param newRate The new rewards rate
+     * @dev Sets the vault associated with the distributor
+     * @param _vault The address of the vault
      */
-    function setRewardsRate(uint256 newRate) external;
+    function setVault(address _vault) external;
+
+    /**
+     * @dev Claims rewards for a user
+     * @param user The address of the user to claim rewards for
+     * @return The amount of rewards claimed
+     */
+    function claimRewards(address user) external returns (uint256);
 }

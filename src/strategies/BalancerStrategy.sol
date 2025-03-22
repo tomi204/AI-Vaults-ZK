@@ -261,12 +261,13 @@ contract BalancerStrategy is BaseStrategy {
      * @return Array of active pool IDs
      */
     function getActivePools() external view returns (bytes32[] memory) {
-        bytes32[] memory activePools = new bytes32[](poolIds.length);
+        // Filter out inactive pools
+        bytes32[] memory activePoolsList = new bytes32[](poolIds.length);
         uint256 activeCount = 0;
 
-        for (uint i = 0; i < poolIds.length; i++) {
+        for (uint256 i = 0; i < poolIds.length; i++) {
             if (activePools[poolIds[i]]) {
-                activePools[activeCount] = poolIds[i];
+                activePoolsList[activeCount] = poolIds[i];
                 activeCount++;
             }
         }
@@ -274,7 +275,7 @@ contract BalancerStrategy is BaseStrategy {
         // Resize the array
         bytes32[] memory result = new bytes32[](activeCount);
         for (uint i = 0; i < activeCount; i++) {
-            result[i] = activePools[i];
+            result[i] = activePoolsList[i];
         }
 
         return result;
@@ -311,7 +312,7 @@ contract BalancerStrategy is BaseStrategy {
     }
 
     /**
-     * @dev Validate if an action is valid
+     * @dev Check if an action is valid for execution
      * @param actionId The identifier of the action
      * @param data Encoded data for the operation
      * @return isValid Whether the action can be executed with the given parameters
@@ -320,7 +321,7 @@ contract BalancerStrategy is BaseStrategy {
     function validateAction(
         uint256 actionId,
         bytes calldata data
-    ) external view override returns (bool isValid, string memory reason) {
+    ) public view override returns (bool isValid, string memory reason) {
         // Check if actionId is valid
         bool validAction = false;
         for (uint i = 0; i < _availableActionIds.length; i++) {

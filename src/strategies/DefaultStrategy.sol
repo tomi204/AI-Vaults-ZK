@@ -351,7 +351,7 @@ contract DefaultStrategy is BaseStrategy {
     function validateAction(
         uint256 actionId,
         bytes calldata data
-    ) external view returns (bool isValid, string memory reason) {
+    ) public view override returns (bool isValid, string memory reason) {
         bool validAction = false;
         for (uint256 i = 0; i < _availableActionIds.length; i++) {
             if (_availableActionIds[i] == actionId) {
@@ -365,26 +365,26 @@ contract DefaultStrategy is BaseStrategy {
         }
 
         if (actionId == ACTION_DEPOSIT || actionId == ACTION_WITHDRAW) {
-            try abi.decode(data, (address, uint256)) {
-                return (true, "");
-            } catch {
+            (address asset, uint256 amount) = abi.decode(
+                data,
+                (address, uint256)
+            );
+            if (asset == address(0) || amount == 0) {
                 return (false, "DefaultStrategy: invalid parameters");
             }
+            return (true, "");
         } else if (actionId == ACTION_SET_RESERVE_RATIO) {
-            try abi.decode(data, (uint256)) returns (uint256 ratio) {
-                if (ratio > MAX_RESERVE_RATIO) {
-                    return (false, "DefaultStrategy: ratio too high");
-                }
-                return (true, "");
-            } catch {
-                return (false, "DefaultStrategy: invalid parameters");
+            uint256 ratio = abi.decode(data, (uint256));
+            if (ratio > MAX_RESERVE_RATIO) {
+                return (false, "DefaultStrategy: ratio too high");
             }
+            return (true, "");
         } else if (actionId == ACTION_SET_MIN_LIQUIDITY) {
-            try abi.decode(data, (uint256)) {
-                return (true, "");
-            } catch {
+            uint256 minLiq = abi.decode(data, (uint256));
+            if (minLiq == 0) {
                 return (false, "DefaultStrategy: invalid parameters");
             }
+            return (true, "");
         }
 
         return (true, "");

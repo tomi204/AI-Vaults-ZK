@@ -4,8 +4,8 @@ pragma solidity ^0.8.13;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../interfaces/IStrategy.sol";
 import "../interfaces/ILending.sol";
@@ -335,7 +335,7 @@ abstract contract BaseStrategy is
     }
 
     /**
-     * @dev Get available actions (must be implemented by derived contracts)
+     * @dev Get available actions
      * @return actionIds Array of action identifiers
      * @return actionNames Array of action names
      * @return actionDescriptions Array of action descriptions
@@ -344,10 +344,9 @@ abstract contract BaseStrategy is
         external
         view
         virtual
-        override
         returns (
             uint256[] memory actionIds,
-            string[] memory names,
+            string[] memory actionNames,
             string[] memory actionDescriptions
         );
 
@@ -484,4 +483,16 @@ abstract contract BaseStrategy is
     function _recordReturn(uint256 profit) internal {
         historicalReturns += profit;
     }
+
+    /**
+     * @dev Check if an action is valid for execution
+     * @param actionId The identifier of the action
+     * @param data Encoded data for the operation
+     * @return isValid Whether the action can be executed with the given parameters
+     * @return reason Reason if the action is invalid
+     */
+    function validateAction(
+        uint256 actionId,
+        bytes calldata data
+    ) public view virtual returns (bool isValid, string memory reason);
 }
