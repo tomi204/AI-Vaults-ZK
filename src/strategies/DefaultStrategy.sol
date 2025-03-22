@@ -42,6 +42,11 @@ contract DefaultStrategy is BaseStrategy {
     event AssetWithdrawn(address indexed asset, uint256 amount);
     event CustomFunctionExecuted(bytes data, bool success);
     event EmergencyLiquidityProvided(address indexed asset, uint256 amount);
+    event AssetEmergencyWithdrawal(
+        address indexed asset,
+        uint256 amount,
+        address indexed recipient
+    );
 
     /**
      * @dev Constructor to set vault address and basic info
@@ -61,6 +66,14 @@ contract DefaultStrategy is BaseStrategy {
             1 // Risk level low (1 out of 5)
         )
     {
+        // Validate supported assets
+        for (uint256 i = 0; i < _supportedAssets.length; i++) {
+            require(
+                _supportedAssets[i] != address(0),
+                "DefaultStrategy: zero asset address"
+            );
+        }
+
         // Initialize available actions
         _availableActionIds = [
             ACTION_DEPOSIT,
@@ -109,6 +122,9 @@ contract DefaultStrategy is BaseStrategy {
                 data,
                 (address, uint256)
             );
+            require(asset != address(0), "DefaultStrategy: zero asset address");
+            require(amount > 0, "DefaultStrategy: zero deposit amount");
+
             uint256 deposited = _depositInternal(asset, amount);
             return (true, abi.encode(deposited));
         } else if (actionId == ACTION_WITHDRAW) {
@@ -116,6 +132,9 @@ contract DefaultStrategy is BaseStrategy {
                 data,
                 (address, uint256)
             );
+            require(asset != address(0), "DefaultStrategy: zero asset address");
+            require(amount > 0, "DefaultStrategy: zero withdraw amount");
+
             uint256 withdrawn = _withdrawInternal(asset, amount);
             return (true, abi.encode(withdrawn));
         } else if (actionId == ACTION_SET_RESERVE_RATIO) {
@@ -126,6 +145,13 @@ contract DefaultStrategy is BaseStrategy {
             return _setMinLiquidity(newMinLiquidity);
         } else if (actionId == ACTION_CUSTOM_FUNCTION) {
             // This allows any custom function to be executed by the agent
+            // We need to be careful with this functionality as it's potentially dangerous
+            require(
+                hasRole(DEFAULT_ADMIN_ROLE, msg.sender) ||
+                    hasRole(AGENT_ROLE, msg.sender),
+                "DefaultStrategy: not authorized for custom function"
+            );
+
             (bool callSuccess, bytes memory callResult) = address(this).call(
                 data
             );
@@ -133,7 +159,7 @@ contract DefaultStrategy is BaseStrategy {
             return (callSuccess, callResult);
         }
 
-        return (false, bytes("Unknown action"));
+        return (false, bytes("DefaultStrategy: unknown action"));
     }
 
     /**
@@ -195,6 +221,8 @@ contract DefaultStrategy is BaseStrategy {
     function _setMinLiquidity(
         uint256 newMinLiquidity
     ) internal returns (bool success, bytes memory result) {
+        require(newMinLiquidity > 0, "DefaultStrategy: zero min liquidity");
+
         uint256 oldValue = minLiquidity;
         minLiquidity = newMinLiquidity;
 
@@ -236,7 +264,10 @@ contract DefaultStrategy is BaseStrategy {
         uint256 amount
     ) internal override returns (uint256) {
         _validateAsset(asset);
+        require(amount > 0, "DefaultStrategy: zero amount");
 
+        // Incrementamos directamente el saldo sin verificar si los tokens se recibieron
+        // ya que asumimos que los tokens ya están en el contrato
         assetBalances[asset] += amount;
         emit AssetDeposited(asset, amount);
 
@@ -254,55 +285,46 @@ contract DefaultStrategy is BaseStrategy {
         uint256 amount
     ) internal override returns (uint256) {
         _validateAsset(asset);
+        require(amount > 0, "DefaultStrategy: zero amount");
+
+        // Ensure we have enough balance to withdraw - this check is still needed
         require(
-            amount <= assetBalances[asset],
+            assetBalances[asset] >= amount,
             "DefaultStrategy: insufficient balance"
         );
 
-        // Calculate how much we can withdraw based on reserve ratio and minimum liquidity
-        uint256 maxWithdrawal = assetBalances[asset];
+        // Calculate the maximum amount that can be withdrawn based on all constraints
+        uint256 withdrawableAmount = getWithdrawableAmount(asset);
 
-        // Ensure we don't drop below min liquidity for this asset
-        if (assetBalances[asset] > minLiquidity) {
-            maxWithdrawal = assetBalances[asset] - minLiquidity;
-        } else {
-            maxWithdrawal = 0;
+        // Use the minimum of requested amount and withdrawable amount
+        uint256 actualWithdraw = amount < withdrawableAmount
+            ? amount
+            : withdrawableAmount;
+
+        if (actualWithdraw > 0) {
+            // Update balances before transfer to prevent reentrancy
+            assetBalances[asset] -= actualWithdraw;
+
+            // Transfer tokens to vault
+            IERC20(asset).safeTransfer(vault, actualWithdraw);
+            emit AssetWithdrawn(asset, actualWithdraw);
         }
 
-        // Apply reserve ratio (this is a secondary check)
-        uint256 reserveAmount = (assetBalances[asset] * reserveRatio) / 100;
-        if (assetBalances[asset] > reserveAmount) {
-            uint256 maxFromReserve = assetBalances[asset] - reserveAmount;
-            if (maxFromReserve < maxWithdrawal) {
-                maxWithdrawal = maxFromReserve;
-            }
-        } else {
-            maxWithdrawal = 0;
-        }
-
-        uint256 withdrawAmount = amount > maxWithdrawal
-            ? maxWithdrawal
-            : amount;
-
-        if (withdrawAmount > 0) {
-            assetBalances[asset] -= withdrawAmount;
-            IERC20(asset).safeTransfer(vault, withdrawAmount);
-            emit AssetWithdrawn(asset, withdrawAmount);
-        }
-
-        return withdrawAmount;
+        return actualWithdraw;
     }
 
     /**
-     * @dev Provides emergency liquidity to the vault
-     * @param asset Asset to provide liquidity for
-     * @param amount Amount needed
+     * @dev Emergency function to provide liquidity immediately
+     * @param asset The address of the asset to provide
+     * @param amount The amount to provide
+     * @return The amount provided
      */
     function provideEmergencyLiquidity(
         address asset,
         uint256 amount
     ) external onlyVault returns (uint256) {
         _validateAsset(asset);
+        require(amount > 0, "DefaultStrategy: zero amount");
 
         uint256 availableAmount = assetBalances[asset];
         uint256 amountToTransfer = amount < availableAmount
@@ -310,7 +332,10 @@ contract DefaultStrategy is BaseStrategy {
             : availableAmount;
 
         if (amountToTransfer > 0) {
+            // Update balances before transfer to prevent reentrancy
             assetBalances[asset] -= amountToTransfer;
+
+            // Transfer tokens to vault
             IERC20(asset).safeTransfer(vault, amountToTransfer);
             emit EmergencyLiquidityProvided(asset, amountToTransfer);
         }
@@ -352,6 +377,7 @@ contract DefaultStrategy is BaseStrategy {
         uint256 actionId,
         bytes calldata data
     ) public view override returns (bool isValid, string memory reason) {
+        // Check if the action ID is valid
         bool validAction = false;
         for (uint256 i = 0; i < _availableActionIds.length; i++) {
             if (_availableActionIds[i] == actionId) {
@@ -369,9 +395,31 @@ contract DefaultStrategy is BaseStrategy {
                 data,
                 (address, uint256)
             );
-            if (asset == address(0) || amount == 0) {
-                return (false, "DefaultStrategy: invalid parameters");
+            if (asset == address(0)) {
+                return (false, "DefaultStrategy: zero asset address");
             }
+            if (amount == 0) {
+                return (false, "DefaultStrategy: zero amount");
+            }
+
+            // Check if asset is supported
+            bool assetSupported = false;
+            for (uint256 i = 0; i < supportedAssets.length; i++) {
+                if (supportedAssets[i] == asset) {
+                    assetSupported = true;
+                    break;
+                }
+            }
+
+            if (!assetSupported) {
+                return (false, "DefaultStrategy: unsupported asset");
+            }
+
+            // For withdrawal, also check if we have enough balance
+            if (actionId == ACTION_WITHDRAW && assetBalances[asset] < amount) {
+                return (false, "DefaultStrategy: insufficient balance");
+            }
+
             return (true, "");
         } else if (actionId == ACTION_SET_RESERVE_RATIO) {
             uint256 ratio = abi.decode(data, (uint256));
@@ -382,8 +430,12 @@ contract DefaultStrategy is BaseStrategy {
         } else if (actionId == ACTION_SET_MIN_LIQUIDITY) {
             uint256 minLiq = abi.decode(data, (uint256));
             if (minLiq == 0) {
-                return (false, "DefaultStrategy: invalid parameters");
+                return (false, "DefaultStrategy: zero min liquidity");
             }
+            return (true, "");
+        } else if (actionId == ACTION_CUSTOM_FUNCTION) {
+            // We don't validate custom function data, as it could be anything.
+            // The action itself will be restricted to admin or agents.
             return (true, "");
         }
 
@@ -397,7 +449,7 @@ contract DefaultStrategy is BaseStrategy {
      */
     function getWithdrawableAmount(
         address asset
-    ) external view returns (uint256) {
+    ) public view returns (uint256) {
         _validateAsset(asset);
 
         uint256 reserveAmount = (assetBalances[asset] * reserveRatio) / 100;
@@ -422,5 +474,26 @@ contract DefaultStrategy is BaseStrategy {
         }
 
         return maxWithdrawal;
+    }
+
+    /**
+     * @dev Override the emergencyWithdraw method to reset asset balances before performing the withdraw
+     */
+    function emergencyWithdraw(
+        address asset
+    ) external override onlyGuardian nonReentrant {
+        _validateAsset(asset);
+
+        uint256 balance = IERC20(asset).balanceOf(address(this));
+        require(balance > 0, "BaseStrategy: no balance to withdraw");
+
+        // Reset the tracked asset balance to 0
+        assetBalances[asset] = 0;
+
+        // Transfer the tokens to the emergency recipient
+        IERC20(asset).safeTransfer(emergencyRecipient, balance);
+
+        // Emit the event from BaseStrategy
+        emit EmergencyWithdrawal(asset, balance, emergencyRecipient);
     }
 }

@@ -51,6 +51,9 @@ abstract contract BaseStrategy is
     // Emergency withdrawal recipient
     address public emergencyRecipient;
 
+    // Flag to track if initial setup was done
+    bool private _initialSetupDone;
+
     // Events
     event StrategyExecuted(uint256 indexed actionId, bool success);
     event AssetAdded(address indexed asset);
@@ -61,6 +64,7 @@ abstract contract BaseStrategy is
         address recipient
     );
     event RebalancePerformed(uint256 timestamp);
+    event InitialSetupComplete(address agent, address guardian);
 
     /**
      * @dev Modifier to restrict access to the vault
@@ -136,6 +140,42 @@ abstract contract BaseStrategy is
 
         // Initialize rebalance timestamp
         lastRebalanceTimestamp = block.timestamp;
+
+        // The initial setup hasn't been done yet
+        _initialSetupDone = false;
+    }
+
+    /**
+     * @dev Helper function for initial setup during deployment
+     * Can only be called once by the deployer or admin of the vault
+     * @param agent Address to grant agent role
+     * @param guardian Address to grant guardian role
+     */
+    function initialSetup(address agent, address guardian) external {
+        // Only allow this function to be called once
+        require(!_initialSetupDone, "BaseStrategy: initial setup already done");
+
+        // Only allow the vault or an address with DEFAULT_ADMIN_ROLE to call this
+        require(
+            msg.sender == vault || hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            "BaseStrategy: caller not authorized for initial setup"
+        );
+
+        // Validate that agent and guardian are not zero addresses
+        require(agent != address(0), "BaseStrategy: agent is zero address");
+        require(
+            guardian != address(0),
+            "BaseStrategy: guardian is zero address"
+        );
+
+        // Grant roles
+        _grantRole(AGENT_ROLE, agent);
+        _grantRole(GUARDIAN_ROLE, guardian);
+
+        // Mark initial setup as done
+        _initialSetupDone = true;
+
+        emit InitialSetupComplete(agent, guardian);
     }
 
     /**
@@ -206,7 +246,7 @@ abstract contract BaseStrategy is
      */
     function emergencyWithdraw(
         address asset
-    ) external onlyGuardian nonReentrant {
+    ) external virtual onlyGuardian nonReentrant {
         _validateAsset(asset);
 
         uint256 balance = IERC20(asset).balanceOf(address(this));
